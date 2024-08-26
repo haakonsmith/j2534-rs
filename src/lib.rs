@@ -24,6 +24,8 @@
 //! }
 //! ```
 
+pub mod drivers;
+
 #[macro_use]
 extern crate bitflags;
 
@@ -31,8 +33,6 @@ use std::ffi::OsStr;
 use std::ffi::{self, CStr, CString};
 use std::fmt;
 use std::fmt::Debug;
-use std::io;
-use std::fs;
 use std::marker::PhantomData;
 use std::path::Path;
 use std::str::Utf8Error;
@@ -42,19 +42,6 @@ use libloading::{Library, Symbol};
 
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::FromPrimitive;
-#[cfg(windows)]
-use winreg::{enums::*, RegKey};
-#[cfg(windows)]
-use pe_parser::pe;
-
-#[cfg(windows)]
-const PASSTHRU_REGPATHS: [&'static str; 2] = [
-    "SOFTWARE\\WOW6432Node\\PassThruSupport.04.04",
-    "SOFTWARE\\PassThruSupport.04.04",
-];
-
-#[cfg(windows)]
-const MACHINE_TYPE: u16 = if std::mem::size_of::<usize>() == 4 {0x8664} else {0x14c};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -1219,58 +1206,4 @@ impl<'a> Drop for Channel<'a> {
     fn drop(&mut self) {
         unsafe { (&self.device.interface.c_pass_thru_disconnect)(self.id.0) };
     }
-}
-
-/// Information about an installed PassThru driver
-#[derive(Debug)]
-pub struct Driver {
-    pub name: String,
-    pub vendor: String,
-    pub path: String,
-}
-
-#[cfg(windows)]
-/// Returns a list of all installed PassThru drivers
-pub fn drivers() -> io::Result<Vec<Driver>> {
-    let mut listings = Vec::new();
-    // Loop over all the possible registry paths
-    for regpath in &PASSTHRU_REGPATHS{
-        let passthru = match RegKey::predef(HKEY_LOCAL_MACHINE)
-            .open_subkey(regpath)
-        {
-            Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                return Ok(Vec::new());
-            }
-            other => other,
-        }?;
-
-        for name in passthru.enum_keys() {
-            let name: String = name?;
-            let key: RegKey = passthru.open_subkey(name)?;
-
-            let device_name: String = key.get_value("Name")?;
-            let vendor: String = key.get_value("Vendor")?;
-            let path: String = key.get_value("FunctionLibrary")?;
-
-            let dll: Vec<u8> = fs::read(&path)?;
-            let pe: Result<pe::PortableExecutable, pe_parser::Error> = pe::parse_portable_executable(dll.as_slice());
-
-            // Only add drivers that are compatible with the current machine
-            if pe.is_ok_and(|pe: pe::PortableExecutable| pe.coff.machine == MACHINE_TYPE) {
-                listings.push(Driver {
-                    name: device_name,
-                    vendor,
-                    path,
-                });
-            }
-        }
-    }
-
-    Ok(listings)
-}
-
-#[cfg(not(windows))]
-/// Returns a list of all installed PassThru drivers
-pub fn drivers() -> io::Result<Vec<Driver>> {
-    Ok(Vec::new())
 }
