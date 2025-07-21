@@ -22,4 +22,5 @@ libloading = "0.8"
 thiserror = "2.0"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55"
+winreg = "0.8"
+pe-parser = "0.7.0"

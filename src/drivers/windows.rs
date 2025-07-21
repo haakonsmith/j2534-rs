@@ -1,8 +1,8 @@
-use std::io;
 use std::fs;
+use std::io;
 
-use winreg::{enums::*, RegKey};
 use pe_parser::pe;
+use winreg::{enums::*, RegKey};
 
 use crate::drivers::{Driver, ProtocolFlag};
 
@@ -11,16 +11,18 @@ const PASSTHRU_REGPATHS: [&'static str; 2] = [
     "SOFTWARE\\PassThruSupport.04.04",
 ];
 
-const MACHINE_TYPE: u16 = if std::mem::size_of::<usize>() == 4 {0x8664} else {0x14c};
+const MACHINE_TYPE: u16 = if std::mem::size_of::<usize>() == 4 {
+    0x8664
+} else {
+    0x14c
+};
 
 /// Returns a list of all installed PassThru drivers
 pub fn list_drivers() -> io::Result<Vec<Driver>> {
     let mut listings = Vec::new();
     // Loop over all the possible registry paths
-    for regpath in &PASSTHRU_REGPATHS{
-        let passthru = match RegKey::predef(HKEY_LOCAL_MACHINE)
-            .open_subkey(regpath)
-        {
+    for regpath in &PASSTHRU_REGPATHS {
+        let passthru = match RegKey::predef(HKEY_LOCAL_MACHINE).open_subkey(regpath) {
             Err(err) if err.kind() == io::ErrorKind::NotFound => {
                 return Ok(Vec::new());
             }
@@ -36,7 +38,10 @@ pub fn list_drivers() -> io::Result<Vec<Driver>> {
             let path: String = key.get_value("FunctionLibrary")?;
             let mut protocols = ProtocolFlag::NONE;
 
-            for (name, _value) in key.enum_values().map(|x: Result<(String, winreg::RegValue), io::Error>| x.unwrap()) {
+            for (name, _value) in key
+                .enum_values()
+                .map(|x: Result<(String, winreg::RegValue), io::Error>| x.unwrap())
+            {
                 if name.starts_with("GM_UART") {
                     protocols |= ProtocolFlag::GM_UART;
                 } else if name.starts_with("ISO9141") {
@@ -54,10 +59,11 @@ pub fn list_drivers() -> io::Result<Vec<Driver>> {
                 } else if name.starts_with("J2610") {
                     protocols |= ProtocolFlag::J2610;
                 }
-            };
+            }
 
             let dll: Vec<u8> = fs::read(&path)?;
-            let pe: Result<pe::PortableExecutable, pe_parser::Error> = pe::parse_portable_executable(dll.as_slice());
+            let pe: Result<pe::PortableExecutable, pe_parser::Error> =
+                pe::parse_portable_executable(dll.as_slice());
 
             // Only add drivers that are compatible with the current machine
             if pe.is_ok_and(|pe: pe::PortableExecutable| pe.coff.machine == MACHINE_TYPE) {
