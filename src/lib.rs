@@ -441,6 +441,9 @@ pub struct Interface {
     c_pass_thru_stop_periodic_msg: PassThruStopPeriodicMsgFn,
     c_pass_thru_set_programming_voltage: PassThruSetProgrammingVoltageFn,
     c_pass_thru_ioctl: PassThruIoctlFn,
+
+    /// WARNING! This needs to stick around, as once this is dropped all those function pointers are now invalid
+    _library: Library,
 }
 
 /// A device created with [`Interface::open`]
@@ -515,6 +518,8 @@ impl Interface {
                 c_pass_thru_set_programming_voltage: *c_pass_thru_set_programming_voltage
                     .into_raw(),
                 c_pass_thru_ioctl: *c_pass_thru_ioctl.into_raw(),
+
+                _library: library,
             }
         };
 

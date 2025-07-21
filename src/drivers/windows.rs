@@ -11,12 +11,6 @@ const PASSTHRU_REGPATHS: [&'static str; 2] = [
     "SOFTWARE\\PassThruSupport.04.04",
 ];
 
-const MACHINE_TYPE: u16 = if std::mem::size_of::<usize>() == 4 {
-    0x8664
-} else {
-    0x14c
-};
-
 /// Returns a list of all installed PassThru drivers
 pub fn list_drivers() -> io::Result<Vec<Driver>> {
     let mut listings = Vec::new();
@@ -61,19 +55,12 @@ pub fn list_drivers() -> io::Result<Vec<Driver>> {
                 }
             }
 
-            let dll: Vec<u8> = fs::read(&path)?;
-            let pe: Result<pe::PortableExecutable, pe_parser::Error> =
-                pe::parse_portable_executable(dll.as_slice());
-
-            // Only add drivers that are compatible with the current machine
-            if pe.is_ok_and(|pe: pe::PortableExecutable| pe.coff.machine == MACHINE_TYPE) {
-                listings.push(Driver {
-                    name: device_name,
-                    vendor,
-                    path,
-                    protocols,
-                });
-            }
+            listings.push(Driver {
+                name: device_name,
+                vendor,
+                path,
+                protocols,
+            });
         }
     }
 
