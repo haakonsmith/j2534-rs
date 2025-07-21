@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Open any connected device
     let device = iface.open_any()?;
     // Get version information
-    let version_info = device.read_version().unwrap();
+    let version_info = device.read_version()?;
     println!("{:#?}", version_info);
 
     // Open a CAN channel with a baudrate of 500k.

@@ -19,11 +19,10 @@ fn main() -> j2534::Result<()> {
     // Open the library and connect to a device
     let interface = Interface::new("C:\\device.dll")?;
     let device = interface.open_any()?;
-    
+
     // Create a CAN channel
     let channel = device
-        .connect(Protocol::CAN, ConnectFlags::NONE, 500000)
-        .unwrap();
+        .connect(Protocol::CAN, ConnectFlags::NONE, 500000)?;
     // Create a new message with an arbitration id of `8` and payload of `[0, 1, 2, 3]`.
     let message = PassThruMsg::new_can(8, &[0, 1, 2, 3]);
     channel.write(&mut [message], 1000)?;

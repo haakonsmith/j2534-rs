@@ -17,13 +17,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Open any connected device
     let d = i.open_any()?;
     // Get version information
-    let version_info = d.read_version().unwrap();
+    let version_info = d.read_version()?;
     println!("{:#?}", version_info);
 
     // Open a ISO-TP channel with a baudrate of 500k.
-    let channel = d
-        .connect(j2534::Protocol::ISO15765, j2534::ConnectFlags::NONE, 500000)
-        .unwrap();
+    let channel = d.connect(j2534::Protocol::ISO15765, j2534::ConnectFlags::NONE, 500000)?;
 
     // Create a filter allowing messages with id `0x7E8` to be received.
     let mask = PassThruMsg::new_isotp(0xFFFFFFFF, &[]).tx_flags(TxFlags::ISO15765_FRAME_PAD);
@@ -46,14 +44,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Receive response
     loop {
         let message = channel.read_once(1000)?;
+
         if message.transmitted() || message.first_frame() {
             // Message has not been fully processed yet..
             continue;
         }
+
         if let Some((_id, data)) = message.isotp_message() {
-            println!("VIN: {}", std::str::from_utf8(&data[3..]).unwrap());
+            println!("VIN: {}", std::str::from_utf8(&data[3..])?);
             break;
         }
     }
+
     Ok(())
 }

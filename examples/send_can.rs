@@ -11,19 +11,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Opening interface '{}'", device.name);
-    let i = j2534::Interface::new(&device.path)?;
+    let iface = j2534::Interface::new(&device.path)?;
+
     // Open any connected device
-    let d = i.open_any()?;
+    let device = iface.open_any()?;
+
     // Get version information
-    let version_info = d.read_version().unwrap();
+    let version_info = device.read_version()?;
     println!("{:#?}", version_info);
 
     // Open a CAN channel with a baudrate of 500k.
-    let channel = d
-        .connect(j2534::Protocol::CAN, j2534::ConnectFlags::NONE, 500000)
-        .unwrap();
+    let channel = device.connect(j2534::Protocol::CAN, j2534::ConnectFlags::NONE, 500000)?;
 
     let message = PassThruMsg::new_can(8, &[0, 1, 2, 3]);
+
+    // try forever to write message
     while channel.write(&mut [message], 100)? == 0 {}
 
     Ok(())
