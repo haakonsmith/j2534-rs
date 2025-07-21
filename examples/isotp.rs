@@ -1,6 +1,6 @@
 //! This example queries a vehicle's VIN using ISO-TP.
 
-use j2534::{ConfigId, PassThruMsg, Protocol, RxStatus, TxFlags};
+use j2534::{PassThruMsg, TxFlags};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get a list of interfaces

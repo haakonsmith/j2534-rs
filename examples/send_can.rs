@@ -1,4 +1,4 @@
-use j2534::{PassThruMsg, RxStatus, TxFlags};
+use j2534::PassThruMsg;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get a list of interfaces

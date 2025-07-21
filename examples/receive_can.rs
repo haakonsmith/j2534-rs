@@ -1,4 +1,4 @@
-use j2534::{PassThruMsg, Protocol, RxStatus, TxFlags};
+use j2534::{PassThruMsg, Protocol};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get a list of interfaces
@@ -11,25 +11,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("Opening interface '{}'", device.name);
-    let i = j2534::Interface::new(&device.path)?;
+    let iface = j2534::Interface::new(&device.path)?;
     // Open any connected device
-    let d = i.open_any()?;
+    let device = iface.open_any()?;
     // Get version information
-    let version_info = d.read_version().unwrap();
+    let version_info = device.read_version().unwrap();
     println!("{:#?}", version_info);
 
     // Open a CAN channel with a baudrate of 500k.
-    let channel = d
-        .connect(j2534::Protocol::CAN, j2534::ConnectFlags::NONE, 500000)
-        .unwrap();
+    let channel = device.connect(j2534::Protocol::CAN, j2534::ConnectFlags::NONE, 500000)?;
 
-    // Create a filter allowing all messages to be received
-    let filter = PassThruMsg::new_can(0, &[0]);
-    let _ =
-        channel.start_message_filter(j2534::FilterType::Pass, Some(&filter), Some(&filter), None);
+    // Create a filter allowing all messages to be received. This works because we are passing it as a mask and it's masking out ALL the bits
+    let empty_filter = PassThruMsg::new_can(0, &[]);
+
+    channel.start_message_filter(
+        j2534::FilterType::Pass,
+        Some(&empty_filter),
+        Some(&empty_filter),
+        None,
+    )?;
 
     let mut messages = [PassThruMsg::new(Protocol::CAN); 32];
-    // Read up to 32 messages
+
+    // Read up to 32 messages. Returns the number of messages actually read before timeout
     let count = channel.read(&mut messages, 1000)?;
     for msg in &messages[..count] {
         if let Some((id, data)) = msg.can_message() {

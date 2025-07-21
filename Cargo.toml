@@ -15,16 +15,10 @@ edition = "2018"
 all-features = true
 default-target = "i686-pc-windows-msvc"
 
-# [badges]
-# maintenance = { status = "passively-maintained" }
-
 [dependencies]
-libc = "0.2"
-bitflags = "1.2"
-libloading = "0.6"
-thiserror = "1.0"
-num-traits = "0.2"
-num-derive = "0.3"
+bitflags = "2.9"
+libloading = "0.8"
+thiserror = "2.0"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.8"
+winreg = "0.55"
