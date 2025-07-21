@@ -1202,7 +1202,7 @@ pub struct Driver {
 /// Returns a list of all installed PassThru drivers
 pub fn drivers() -> io::Result<Vec<Driver>> {
     let passthru = match RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey(Path::new("SOFTWARE").join("PassThruSupport.04.04"))
+        .open_subkey(std::path::Path::new("SOFTWARE").join("PassThruSupport.04.04"))
     {
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             return Ok(Vec::new());
