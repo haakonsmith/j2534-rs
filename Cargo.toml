@@ -17,6 +17,7 @@ default-target = "i686-pc-windows-msvc"
 
 [dependencies]
 bitflags = "2.9"
+cfg-if = "1.0.1"
 libloading = "0.8"
 thiserror = "2.0"
 

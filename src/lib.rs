@@ -25,17 +25,14 @@
 //! ```
 
 use bitflags::bitflags;
+pub mod drivers;
 
 use std::ffi::{self, CStr, CString};
 use std::ffi::{c_char, c_void, OsStr};
 use std::fmt;
 use std::fmt::Debug;
-use std::io;
 
 use libloading::{Library, Symbol};
-
-#[cfg(windows)]
-use winreg::{enums::*, RegKey};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -1188,49 +1185,4 @@ impl<'a> Drop for Channel<'a> {
     fn drop(&mut self) {
         unsafe { (self.device.interface.c_pass_thru_disconnect)(self.id.0) };
     }
-}
-
-/// Information about an installed PassThru driver
-#[derive(Debug)]
-pub struct Driver {
-    pub name: String,
-    pub vendor: String,
-    pub path: String,
-}
-
-#[cfg(windows)]
-/// Returns a list of all installed PassThru drivers
-pub fn drivers() -> io::Result<Vec<Driver>> {
-    let passthru = match RegKey::predef(HKEY_LOCAL_MACHINE)
-        .open_subkey(std::path::Path::new("SOFTWARE").join("PassThruSupport.04.04"))
-    {
-        Err(err) if err.kind() == io::ErrorKind::NotFound => {
-            return Ok(Vec::new());
-        }
-        other => other,
-    }?;
-    let mut listings = Vec::new();
-
-    for name in passthru.enum_keys() {
-        let name = name?;
-        let key = passthru.open_subkey(name)?;
-
-        let device_name: String = key.get_value("Name")?;
-        let vendor: String = key.get_value("Vendor")?;
-        let path: String = key.get_value("FunctionLibrary")?;
-
-        listings.push(Driver {
-            name: device_name,
-            vendor,
-            path,
-        });
-    }
-
-    Ok(listings)
-}
-
-#[cfg(not(windows))]
-/// Returns a list of all installed PassThru drivers
-pub fn drivers() -> io::Result<Vec<Driver>> {
-    Ok(Vec::new())
 }

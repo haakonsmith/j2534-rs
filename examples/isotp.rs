@@ -4,7 +4,7 @@ use j2534::{PassThruMsg, TxFlags};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get a list of interfaces
-    let device = match j2534::drivers()?.into_iter().next() {
+    let device = match j2534::drivers::list()?.into_iter().next() {
         Some(device) => device,
         None => {
             println!("No J2534 interfaces found");
