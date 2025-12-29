@@ -1,15 +1,14 @@
 [package]
 name = "j2534"
-version = "0.3.5"
+version = "0.3.6"
 authors = ["Altenius <jacobjm18@gmail.com>", "Haakon <haakonss04@gmail.com>"]
 keywords = ["cars", "tuning", "passthru"]
 categories = ["external-ffi-bindings", "hardware-support"]
 description = "PassThru (SAE J2534) bindings."
-repository = "https://github.com/2MEngineeringSolutions/j2534-rs"
+repository = "https://github.com/haakonsmith/j2534-rs"
 license = "MIT"
 readme = "README.md"
 edition = "2024"
-publish = ["m2eng"]
 
 [package.metadata.docs.rs]
 all-features = true
