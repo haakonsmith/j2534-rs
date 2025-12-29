@@ -1,6 +1,6 @@
 [package]
 name = "j2534"
-version = "0.3.4"
+version = "0.3.5"
 authors = ["Altenius <jacobjm18@gmail.com>", "Haakon <haakonss04@gmail.com>"]
 keywords = ["cars", "tuning", "passthru"]
 categories = ["external-ffi-bindings", "hardware-support"]
@@ -8,7 +8,7 @@ description = "PassThru (SAE J2534) bindings."
 repository = "https://github.com/2MEngineeringSolutions/j2534-rs"
 license = "MIT"
 readme = "README.md"
-edition = "2018"
+edition = "2024"
 publish = ["m2eng"]
 
 [package.metadata.docs.rs]
@@ -16,11 +16,11 @@ all-features = true
 default-target = "i686-pc-windows-msvc"
 
 [dependencies]
-bitflags = "2.9"
-cfg-if = "1.0.1"
-libloading = "0.8"
+bitflags = "2.10"
+cfg-if = "1.0.4"
+libloading = "0.9"
 thiserror = "2.0"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.8"
+winreg = "0.55"
 pe-parser = "0.7.0"

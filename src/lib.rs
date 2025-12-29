@@ -28,11 +28,11 @@ use bitflags::bitflags;
 pub mod drivers;
 
 use std::ffi::{self, CStr, CString};
-use std::ffi::{c_char, c_void, OsStr};
+use std::ffi::{c_char, c_void};
 use std::fmt;
 use std::fmt::Debug;
 
-use libloading::{Library, Symbol};
+use libloading::{AsFilename, Library, Symbol};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -471,7 +471,7 @@ impl Interface {
     /// use j2534::Interface;
     /// let interface = Interface::new("C:\\j2534_driver.dll").unwrap();
     /// ```
-    pub fn new<S: AsRef<OsStr>>(path: S) -> Result<Interface, libloading::Error> {
+    pub fn new(path: impl AsFilename) -> Result<Interface, libloading::Error> {
         // SAFETY: When a library is loaded, initialisation routines contained within it are executed. For the purposes of safety, the execution of these routines is conceptually the same calling an unknown foreign function and may impose arbitrary requirements on the caller for the call to be sound.
         let library = unsafe { Library::new(path) }?;
 
@@ -598,7 +598,7 @@ impl Interface {
         input: *mut c_void,
         output: *mut c_void,
     ) -> Result<i32, Error> {
-        let res = (self.c_pass_thru_ioctl)(handle, id as u32, input, output);
+        let res = unsafe { (self.c_pass_thru_ioctl)(handle, id as u32, input, output) };
         if res != 0 {
             return Err(Error::from_code(res));
         }
