@@ -34,7 +34,7 @@ use std::fmt::Debug;
 
 use libloading::{AsFilename, Library, Symbol};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Error {
     #[error("success")]
     NoError,
@@ -235,18 +235,21 @@ pub struct PassThruMsg {
     pub data: [u8; 4128],
 }
 
+#[derive(Clone, Debug)]
 #[repr(C, packed(1))]
 struct SConfig {
     parameter: u32,
     value: u32,
 }
 
+#[derive(Clone, Debug)]
 #[repr(C, packed(1))]
 struct SConfigList {
     size: u32,
     config_ptr: *const SConfig,
 }
 
+#[derive(Clone, Debug)]
 #[repr(C, packed(1))]
 pub struct SByteArray {
     size: u32,
@@ -409,21 +412,47 @@ impl Debug for PassThruMsg {
     }
 }
 
-/// Vehicle communication channel ID
-#[derive(Copy, Clone, Debug)]
-struct ChannelId(u32);
+macro_rules! new_type {
+    ($(#[$attr:meta])* $type:ident($inner:ty)) => {
+        $(#[$attr])*
+        #[derive(Copy, Clone, Debug)]
+        #[repr(transparent)]
+        pub struct $type($inner);
 
-/// Device ID
-#[derive(Copy, Clone, Debug)]
-struct DeviceId(u32);
+        impl $type {
+            /// # Safety
+            ///
+            /// This is unsafe because it bypasses the type system and can lead to undefined behavior if the value is not valid for the type.
+            pub const unsafe fn new_unchecked(value: $inner) -> Self {
+                Self(value)
+            }
 
-/// Periodic message ID
-#[derive(Copy, Clone, Debug)]
-pub struct MessageId(u32);
+            pub fn as_inner(&self) -> $inner {
+                self.0
+            }
+        }
+    };
+}
 
-/// Message filter ID
-#[derive(Copy, Clone, Debug)]
-pub struct FilterId(u32);
+new_type!(
+    /// Vehicle communication channel ID
+    ChannelId(u32)
+);
+
+new_type!(
+    /// Device ID
+    DeviceId(u32)
+);
+
+new_type!(
+    /// Periodic message ID
+    MessageId(u32)
+);
+
+new_type!(
+    /// Message filter ID
+    FilterId(u32)
+);
 
 /// A J2534 library
 pub struct Interface {
@@ -577,7 +606,7 @@ impl Interface {
     /// let device = interface.open_any().unwrap();
     /// ```
     pub fn open_any(&'_ self) -> Result<Device<'_>, Error> {
-        let raw = std::ptr::null() as *const c_void;
+        let raw = std::ptr::null();
         let mut id = 0;
         let res = unsafe { (self.c_pass_thru_open)(raw, &mut id as *mut u32) };
         if res != 0 {
@@ -591,6 +620,10 @@ impl Interface {
     }
 
     /// General purpose I/O control for modifying device or channel characteristics.
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe since it will dereference the raw pointers passed to it, if the data layout is not correct UB will occur
     pub unsafe fn ioctl(
         &self,
         handle: u32,
@@ -622,6 +655,7 @@ pub enum Protocol {
 
 bitflags! {
     /// Flags used when creating a communication channel
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     pub struct ConnectFlags: u32 {
         const NONE = 0;
         const CAN_29_BIT_ID = 0x100;
@@ -633,6 +667,7 @@ bitflags! {
 
 bitflags! {
     /// Transmit status flags
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     pub struct TxFlags: u32 {
         const NONE = 0;
         // 0 = no padding
@@ -663,6 +698,7 @@ bitflags! {
 
 bitflags! {
     /// Receive status flags
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
     pub struct RxStatus: u32 {
         const NONE = 0;
         // 0 = received
@@ -701,7 +737,7 @@ bitflags! {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum IoctlId {
     GetConfig = 0x01,
     SetConfig = 0x02,
@@ -724,8 +760,8 @@ pub enum IoctlId {
     BecomeMaster = 0x8003,
 }
 
-#[derive(Copy, Clone)]
 /// Channel configuration parameters. Use with [`Channel::get_config`] and [`Channel::set_config`]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ConfigId {
     DataRate = 0x01,
     LOOPBACK = 0x03,
@@ -783,7 +819,7 @@ pub enum ConfigId {
     InputRangeHigh = 0x8027,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum FilterType {
     /// Allows matching messages into the receive queue. This filter type is only valid on non-ISO 15765 channels
     Pass = 1,
@@ -794,8 +830,8 @@ pub enum FilterType {
     FlowControl = 3,
 }
 
-#[derive(Debug)]
 /// Information about a device's version.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct VersionInfo {
     pub firmware_version: CString,
     pub dll_version: CString,
@@ -1007,17 +1043,17 @@ impl<'a> Channel<'a> {
 
         let mask_ptr = match mask_msg {
             Some(msg) => msg as *const PassThruMsg,
-            None => std::ptr::null() as *const PassThruMsg,
+            None => std::ptr::null(),
         };
 
         let pattern_ptr = match pattern_msg {
             Some(msg) => msg as *const PassThruMsg,
-            None => std::ptr::null() as *const PassThruMsg,
+            None => std::ptr::null(),
         };
 
         let flow_control_ptr = match flow_control_msg {
             Some(msg) => msg as *const PassThruMsg,
-            None => std::ptr::null() as *const PassThruMsg,
+            None => std::ptr::null(),
         };
 
         let res = unsafe {
