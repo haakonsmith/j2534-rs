@@ -4,10 +4,10 @@
 //! well as downloading and reflashing control modules.
 //!
 //! ### Example
-//! ```rust
+//! ```no_run
 //! use j2534::{Interface, PassThruMsg, Protocol, ConnectFlags, RxStatus, TxFlags};
 //!
-//! fn main() -> j2534::Result<()> {
+//! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     // Open the library and connect to a device
 //!     let interface = Interface::new("C:\\device.dll")?;
 //!     let device = interface.open_any()?;
@@ -31,6 +31,7 @@ use std::ffi::{self, CStr, CString};
 use std::ffi::{c_char, c_void};
 use std::fmt;
 use std::fmt::Debug;
+use std::ops::Deref;
 
 use libloading::{AsFilename, Library, Symbol};
 
@@ -165,7 +166,7 @@ impl Error {
 }
 
 pub type PassThruOpenFn =
-    unsafe extern "system" fn(name: *const c_void, device_id: *mut u32) -> i32;
+    unsafe extern "system" fn(name: *const c_char, device_id: *mut u32) -> i32;
 pub type PassThruCloseFn = unsafe extern "system" fn(device_id: u32) -> i32;
 pub type PassThruConnectFn = unsafe extern "system" fn(
     device_id: u32,
@@ -434,6 +435,23 @@ macro_rules! new_type {
     };
 }
 
+/// This is a handle which is either ChannelId or DeviceId
+pub trait ResourceHandle {
+    fn as_inner(&self) -> u32;
+}
+
+impl ResourceHandle for ChannelId {
+    fn as_inner(&self) -> u32 {
+        self.0
+    }
+}
+
+impl ResourceHandle for DeviceId {
+    fn as_inner(&self) -> u32 {
+        self.0
+    }
+}
+
 new_type!(
     /// Vehicle communication channel ID
     ChannelId(u32)
@@ -476,16 +494,31 @@ pub struct Interface {
 }
 
 /// A device created with [`Interface::open`]
-pub struct Device<'a> {
-    interface: &'a Interface,
-    id: DeviceId,
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct Device<I: Deref<Target = Interface>> {
+    pub interface: I,
+    pub id: DeviceId,
+}
+
+pub trait ChannelCloser {
+    fn close(&self, id: ChannelId);
+}
+
+impl<I: Deref<Target = Interface>, T: Deref<Target = Device<I>>> ChannelCloser for T {
+    fn close(&self, id: ChannelId) {
+        unsafe {
+            (self.interface.c_pass_thru_disconnect)(id.0);
+        }
+    }
 }
 
 /// A communication channel
-pub struct Channel<'a> {
-    device: &'a Device<'a>,
-    id: ChannelId,
-    protocol: Protocol,
+#[derive(Debug, Clone)]
+pub struct Channel<D: ChannelCloser> {
+    pub device: D,
+    pub id: ChannelId,
+    pub protocol: Protocol,
 }
 
 impl Interface {
@@ -569,7 +602,8 @@ impl Interface {
         Ok(c_str.to_owned())
     }
 
-    /// Creates a `Device` from the PassThru interface connected to the given port
+    /// Creates a `Device` from the PassThru interface connected to the given port.
+    /// Note this interface requires you to use borrow types for the interface. For a more flexible option use `Device::open`
     ///
     /// # Arguments
     ///
@@ -581,42 +615,21 @@ impl Interface {
     /// let interface = Interface::new("C:\\j2534_driver.dll").unwrap();
     /// let device = interface.open("COM2").unwrap();
     /// ```
-    pub fn open<S: Into<Vec<u8>>>(&'_ self, port: S) -> Result<Device<'_>, Error> {
-        let s = ffi::CString::new(port).unwrap();
-        let raw = s.as_ptr() as *const c_void;
-        let mut id = 0;
-
-        let res = unsafe { (self.c_pass_thru_open)(raw, &mut id as *mut u32) };
-        if res != 0 {
-            return Err(Error::from_code(res));
-        }
-
-        Ok(Device {
-            interface: self,
-            id: DeviceId(id),
-        })
+    pub fn open(&'_ self, port: impl Into<Vec<u8>>) -> Result<Device<&Self>, Error> {
+        Device::open(self, Some(port.into()))
     }
 
     /// Creates a `Device` from any connected PassThru devices
+    /// Note this interface requires you to use borrow types for the interface. For a more flexible option use `Device::open`
     ///
     /// # Example
-    /// ```
+    /// ```no_run
     /// use j2534::Interface;
     /// let interface = Interface::new("C:\\j2534_driver.dll").unwrap();
     /// let device = interface.open_any().unwrap();
     /// ```
-    pub fn open_any(&'_ self) -> Result<Device<'_>, Error> {
-        let raw = std::ptr::null();
-        let mut id = 0;
-        let res = unsafe { (self.c_pass_thru_open)(raw, &mut id as *mut u32) };
-        if res != 0 {
-            return Err(Error::from_code(res));
-        }
-
-        Ok(Device {
-            interface: self,
-            id: DeviceId(id),
-        })
+    pub fn open_any(&'_ self) -> Result<Device<&Self>, Error> {
+        Device::open(self, None)
     }
 
     /// General purpose I/O control for modifying device or channel characteristics.
@@ -626,12 +639,12 @@ impl Interface {
     /// This is unsafe since it will dereference the raw pointers passed to it, if the data layout is not correct UB will occur
     pub unsafe fn ioctl(
         &self,
-        handle: u32,
+        handle: impl ResourceHandle,
         id: IoctlId,
         input: *mut c_void,
         output: *mut c_void,
     ) -> Result<i32, Error> {
-        let res = unsafe { (self.c_pass_thru_ioctl)(handle, id as u32, input, output) };
+        let res = unsafe { (self.c_pass_thru_ioctl)(handle.as_inner(), id as u32, input, output) };
         if res != 0 {
             return Err(Error::from_code(res));
         }
@@ -639,7 +652,7 @@ impl Interface {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum Protocol {
     J1850VPW = 1,
     J1850PWM = 2,
@@ -841,7 +854,42 @@ pub struct VersionInfo {
 pub const SHORT_TO_GROUND: u32 = 0xFFFFFFFE;
 pub const VOLTAGE_OFF: u32 = 0xFFFFFFFF;
 
-impl<'a> Device<'a> {
+impl<I: Deref<Target = Interface>> Device<I> {
+    /// Creates a `Device` from the given interface.
+    /// If port is `None` then it will try to connect to any available port.
+    ///
+    /// # Arguments
+    ///
+    /// * `interface` - The PassThru interface to open a device on
+    /// * `port` - The port to search for a J2534 device, or `None` to connect to any available device
+    ///
+    /// # Example
+    /// ```no_run
+    /// use j2534::{Interface, Device};
+    /// let interface = Interface::new("C:\\j2534_driver.dll").unwrap();
+    /// let device = Device::open(&interface, None).unwrap();
+    /// ```
+    pub fn open(interface: I, port: Option<Vec<u8>>) -> Result<Self, Error> {
+        let c_string = port
+            .map(ffi::CString::new)
+            .transpose()
+            .map_err(|_| Error::Failed)?;
+
+        let raw = c_string.as_ref().map_or(std::ptr::null(), |s| s.as_ptr());
+
+        let mut id = 0;
+
+        let res = unsafe { (interface.c_pass_thru_open)(raw, &mut id as *mut u32) };
+        if res != 0 {
+            return Err(Error::from_code(res));
+        }
+
+        Ok(Self {
+            interface,
+            id: DeviceId(id),
+        })
+    }
+
     /// Reads the version info of the device
     pub fn read_version(&self) -> Result<VersionInfo, Error> {
         let mut firmware_version: [u8; 80] = [0; 80];
@@ -898,25 +946,8 @@ impl<'a> Device<'a> {
         protocol: Protocol,
         flags: ConnectFlags,
         baudrate: u32,
-    ) -> Result<Channel<'_>, Error> {
-        let mut id: u32 = 0;
-        let res = unsafe {
-            (self.interface.c_pass_thru_connect)(
-                self.id.0,
-                protocol as u32,
-                flags.bits(),
-                baudrate,
-                &mut id as *mut u32,
-            )
-        };
-        if res != 0 {
-            return Err(Error::from_code(res));
-        }
-        Ok(Channel {
-            device: self,
-            id: ChannelId(id),
-            protocol: protocol as Protocol,
-        })
+    ) -> Result<Channel<&Self>, Error> {
+        Channel::connect(self, protocol, flags, baudrate)
     }
 
     /// Returns the battery voltage in millivolts read from Pin 16 on the J1962 connector.
@@ -924,7 +955,7 @@ impl<'a> Device<'a> {
         let mut voltage: u32 = 0;
         unsafe {
             self.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::ReadVbatt,
                 std::ptr::null_mut::<c_void>(),
                 (&mut voltage) as *mut _ as *mut c_void,
@@ -938,7 +969,7 @@ impl<'a> Device<'a> {
         let mut voltage: u32 = 0;
         unsafe {
             self.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::ReadProgVoltage,
                 std::ptr::null_mut::<c_void>(),
                 (&mut voltage) as *mut _ as *mut c_void,
@@ -948,13 +979,44 @@ impl<'a> Device<'a> {
     }
 }
 
-impl<'a> Drop for Device<'a> {
+impl<I: Deref<Target = Interface>> Drop for Device<I> {
     fn drop(&mut self) {
         unsafe { (self.interface.c_pass_thru_close)(self.id.0) };
     }
 }
 
-impl<'a> Channel<'a> {
+impl<I: Deref<Target = Interface>, D> Channel<D>
+where
+    D: Deref<Target = Device<I>> + ChannelCloser,
+{
+    pub fn connect(
+        device: D,
+        protocol: Protocol,
+        flags: ConnectFlags,
+        baudrate: u32,
+    ) -> Result<Channel<D>, Error> {
+        let mut id: u32 = 0;
+        let res = unsafe {
+            (device.interface.c_pass_thru_connect)(
+                device.id.0,
+                protocol as u32,
+                flags.bits(),
+                baudrate,
+                &mut id as *mut u32,
+            )
+        };
+
+        if res != 0 {
+            return Err(Error::from_code(res));
+        }
+
+        Ok(Channel {
+            device,
+            id: ChannelId(id),
+            protocol: protocol as Protocol,
+        })
+    }
+
     /// Fills `msgs` with messages until timing out or until `msgs` is filled. Returns the slice of messages read.
     ///
     /// # Arguments
@@ -1131,7 +1193,7 @@ impl<'a> Channel<'a> {
     pub fn clear_transmit_buffer(&self) -> Result<(), Error> {
         unsafe {
             self.device.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::ClearTxBuffer,
                 std::ptr::null_mut::<c_void>(),
                 std::ptr::null_mut::<c_void>(),
@@ -1144,7 +1206,7 @@ impl<'a> Channel<'a> {
     pub fn clear_periodic_messages(&self) -> Result<(), Error> {
         unsafe {
             self.device.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::ClearPeriodicMsgs,
                 std::ptr::null_mut::<c_void>(),
                 std::ptr::null_mut::<c_void>(),
@@ -1157,7 +1219,7 @@ impl<'a> Channel<'a> {
     pub fn clear_receive_buffer(&self) -> Result<(), Error> {
         unsafe {
             self.device.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::ClearRxBuffer,
                 std::ptr::null_mut::<c_void>(),
                 std::ptr::null_mut::<c_void>(),
@@ -1170,7 +1232,7 @@ impl<'a> Channel<'a> {
     pub fn clear_message_filters(&self) -> Result<(), Error> {
         unsafe {
             self.device.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::ClearMsgFilters,
                 std::ptr::null_mut::<c_void>(),
                 std::ptr::null_mut::<c_void>(),
@@ -1191,7 +1253,7 @@ impl<'a> Channel<'a> {
         };
         unsafe {
             self.device.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::GetConfig,
                 &mut input as *mut _ as *mut c_void,
                 std::ptr::null_mut::<c_void>(),
@@ -1212,7 +1274,7 @@ impl<'a> Channel<'a> {
         };
         unsafe {
             self.device.interface.ioctl(
-                self.id.0,
+                self.id,
                 IoctlId::SetConfig,
                 &mut input as *mut _ as *mut c_void,
                 std::ptr::null_mut::<c_void>(),
@@ -1222,8 +1284,8 @@ impl<'a> Channel<'a> {
     }
 }
 
-impl<'a> Drop for Channel<'a> {
+impl<D: ChannelCloser> Drop for Channel<D> {
     fn drop(&mut self) {
-        unsafe { (self.device.interface.c_pass_thru_disconnect)(self.id.0) };
+        self.device.close(self.id);
     }
 }
