@@ -332,6 +332,30 @@ impl PassThruMsg {
         }
     }
 
+    /// Creates a new message ripping the data straight from the prefix.
+    pub fn new_from_prefix(protocol: Protocol, data: &[u8]) -> PassThruMsg {
+        let mut msg_data = [0_u8; 4128];
+
+        // Copy the message
+        msg_data[..data.len()].copy_from_slice(data);
+
+        PassThruMsg {
+            data: msg_data,
+            data_size: data.len() as u32,
+            ..Self::new(protocol)
+        }
+    }
+
+    /// Creates a new iso9141 message ripping the data straight from the prefix.
+    pub fn new_iso9141(data: &[u8]) -> PassThruMsg {
+        Self::new_from_prefix(Protocol::ISO9141, data)
+    }
+
+    /// Creates a new iso14230 message ripping the data straight from the prefix.
+    pub fn new_iso14230(data: &[u8]) -> PassThruMsg {
+        Self::new_from_prefix(Protocol::ISO14230, data)
+    }
+
     /// Returns the CAN ID and payload. Also use this method for reading ISO-TP messages.
     /// Returns `None` if the protocol is not CAN or ISO15765 or if the message is too short.
     pub fn can_message(&self) -> Option<(u32, &[u8])> {
@@ -416,7 +440,7 @@ impl Debug for PassThruMsg {
 macro_rules! new_type {
     ($(#[$attr:meta])* $type:ident($inner:ty)) => {
         $(#[$attr])*
-        #[derive(Copy, Clone, Debug)]
+        #[derive(Copy, Clone, Debug, PartialEq, Eq)]
         #[repr(transparent)]
         pub struct $type($inner);
 
@@ -494,7 +518,7 @@ pub struct Interface {
 }
 
 /// A device created with [`Interface::open`]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Device<I: Deref<Target = Interface>> {
     pub interface: I,
@@ -514,7 +538,7 @@ impl<I: Deref<Target = Interface>, T: Deref<Target = Device<I>>> ChannelCloser f
 }
 
 /// A communication channel
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Channel<D: ChannelCloser> {
     pub device: D,
     pub id: ChannelId,
@@ -652,7 +676,7 @@ impl Interface {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Protocol {
     J1850VPW = 1,
     J1850PWM = 2,
@@ -696,6 +720,8 @@ bitflags! {
         const WAIT_P3_MIN_ONLY = 0x00000200;
 
         const SW_CAN_HV_TX = 0x00000400;
+
+        const BLOCKING = 0x10000;
 
         // 0 = Transmit using SCI Full duplex mode
         // 1 = Transmit using SCI Half duplex mode
@@ -1187,6 +1213,20 @@ where
             return Err(Error::from_code(res));
         }
         Ok(())
+    }
+
+    /// Clear transmit message queue
+    pub fn fast_init(&self, msg: &[u8]) -> Result<PassThruMsg, Error> {
+        let mut msg = PassThruMsg::new_iso9141(msg);
+        let ptr = &mut msg as *mut PassThruMsg as *mut c_void;
+
+        unsafe {
+            self.device
+                .interface
+                .ioctl(self.id, IoctlId::FastInit, ptr, ptr)
+        }?;
+
+        Ok(msg)
     }
 
     /// Clear transmit message queue

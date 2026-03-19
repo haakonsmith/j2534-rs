@@ -13,7 +13,7 @@ use bitflags::bitflags;
 use std::fmt;
 
 bitflags! {
-    #[derive(Debug)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash)]
     pub struct ProtocolFlag: u32 {
         const NONE      = 0b00000000;
         const GM_UART   = 0b00000001;
@@ -59,7 +59,7 @@ impl fmt::Display for ProtocolFlag {
 }
 
 /// Information about an installed PassThru driver
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Driver {
     pub name: String,
     pub vendor: String,
